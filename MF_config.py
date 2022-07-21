@@ -65,7 +65,7 @@ class Foreground_training_configuration_data:
 
             # user interface parameters
             self.training_images_output_directory = '/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs'
-            self.n_images_to_show = 60 #10 # number of images to show during training
+            self.n_images_to_show = 6 # number of images to show during training
             self.message_time = 15 # time between two training status message
             self.show_time = 60 # time between images saving (sec)
             self.save_time = 300 # time between model saving
