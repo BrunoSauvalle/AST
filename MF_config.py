@@ -30,6 +30,8 @@ class Foreground_training_configuration_data:
             self.fixed_background = None
 
             # model parameters
+            self.feature_map_generator_name = "Unet" # "Unet" or "Segformer"
+            self.pretrained_backbone_weights_reference = "nvidia/mit-b3" # for Segformer cf Hugging Face website for available weights
             self.isotropic_scaling = None
             self.transformer_dim = 256 # dimension of inputs and outputs of the transformer encoder
             self.transformer_nhead = 8 # number of heads of  transformer encoder
@@ -191,8 +193,9 @@ dataset_configs = {'clevrtex':
                     "test_dataset_input_path": "/workspace/nvme0n1p1/Datasets/objects_room/background_output/input_images_test",
                    "test_dataset_background_path": "/workspace/nvme0n1p1/Datasets/objects_room/background_output/backgrounds_rgba_test",
                    "test_dataset_GT_mask_path": "/workspace/nvme0n1p1/Datasets/objects_room/background_output/GT_masks_test",
-              #"object_model_checkpoint_path_alt1":"/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-05-13T20:23:02.862769tinput_images_train/checkpoint_final_8_epochs.pth",
-                   "object_model_checkpoint_path": "/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-05-13T17:49:13.696656tinput_images_train/checkpoint_final_8_epochs.pth",
+
+                   #"object_model_checkpoint_path": "/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-05-13T17:49:13.696656tinput_images_train/checkpoint_final_8_epochs.pth",
+                "object_model_checkpoint_path":"/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-07-29T10:15:42.491299tinput_images_train/checkpoint_0.pth",
                     "results_dir_path" :  "/workspace/nvme0n1p1/Datasets/objects_room/results",
                      },
 
@@ -203,7 +206,8 @@ dataset_configs = {'clevrtex':
         "test_dataset_input_path": "/workspace/nvme0n1p1/Datasets/southampton2/background_output/input_images_train",
         "test_dataset_background_path": "/workspace/nvme0n1p1/Datasets/southampton2/background_output/backgrounds_rgba_train",
         #"object_model_checkpoint_path": "/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-05-03T10:58:04.208388tinput_images_train/checkpoint_final_107_epochs.pth",
-        "object_model_checkpoint_path":  "/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-05-21T15:25:47.918711tinput_images_train/checkpoint_final_134_epochs.pth",
+        #"object_model_checkpoint_path":  "/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-05-21T15:25:47.918711tinput_images_train/checkpoint_final_134_epochs.pth",
+        "object_model_checkpoint_path": "/workspace/PycharmProjects/SCOD/MOS/MF/MF_outputs/2022-07-21T14:03:55.634360tinput_images_train/checkpoint_final_132_epochs.pth",
         "results_dir_path": "/workspace/nvme0n1p1/Datasets/southampton2/foreground_output/",
         "use_trained_model" : False
         },
@@ -236,7 +240,7 @@ dataset_configs = {'clevrtex':
 
 #dataset_name = 'shapestacks'
 #dataset_name = 'objects_room'
-dataset_name = 'clevrtex'
+dataset_name = 'objects_room'
 #dataset_name = 'clevr'
 #dataset_name = 'camo'
 #dataset_name = 'ood'

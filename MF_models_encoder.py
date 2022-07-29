@@ -1,7 +1,24 @@
 
 import torch
 import torch.nn as nn
+from MF_config import args
 
+from transformers import SegformerModel, SegformerConfig, SegformerForSemanticSegmentation
+
+
+class Segformer_model(nn.Module):
+
+    def __init__(self,out_channels):
+        super().__init__()
+        segformer_model = SegformerModel.from_pretrained(args.pretrained_backbone_weights_reference)
+        configuration = segformer_model.config
+        configuration.num_labels = out_channels
+        self.complete_model = SegformerForSemanticSegmentation(configuration)
+        self.complete_model.segformer = segformer_model
+
+    def forward(self, x):
+        outputs = self.complete_model(x)
+        return outputs.logits
 
 def compute_output_paddings(image_height,image_width,n_layers):
 
@@ -144,15 +161,30 @@ class Encoder(nn.Module):
 
         feature_and_attention_map_dim = self.args.max_set_size+self.args.z_what_dim + 1 + self.scaling_dim # +1 is for activation
 
-        self.feature_and_attention_map_generator = Unet(args.image_height, args.image_width,3, feature_and_attention_map_dim)
+        if args.feature_map_generator_name == "Unet":
+            self.feature_and_attention_map_generator = Unet(args.image_height, args.image_width,3, feature_and_attention_map_dim)
+        elif args.feature_map_generator_name == "Segformer":
+            self.feature_and_attention_map_generator = Segformer_model(feature_and_attention_map_dim)
+        else:
+            print(f'feature map generator name {args.feature_map_generator_name} not recognized ')
+            exit(0)
+
+        self.feature_and_attention_map_generator = self.feature_and_attention_map_generator.to(args.device)
+
+        test_image = torch.rand(1,3,args.image_height,args.image_width).to(args.device)
+        bs,n_channels,self.feature_map_height,self.feature_map_width = self.feature_and_attention_map_generator(test_image ).shape
+        fw = self.feature_map_width
+        fh = self.feature_map_height
+        print(f'feature map shape is {n_channels,fh,fw}')
+        assert n_channels ==  feature_and_attention_map_dim
 
         # position encoding for position latents, range normalized on [-1,1]
-        position_map = torch.zeros((2, h, w))
-        for x in range(w):
-            for y in range(h):
-                position_map[0, y, x] = 2*(x / (w-1) - 0.5)
-                position_map[1, y, x] = 2*(y / (h-1) - 0.5)
-        self.position_map = nn.Parameter(position_map.reshape( 1, 2, h,w), requires_grad=False)
+        position_map = torch.zeros((2, fh, fw))
+        for x in range(fw):
+            for y in range(fh):
+                position_map[0, y, x] = 2*(x / (fw-1) - 0.5)
+                position_map[1, y, x] = 2*(y / (fh-1) - 0.5)
+        self.position_map = nn.Parameter(position_map.reshape( 1, 2, fh,fw), requires_grad=False)
 
         self.feature_vector_embedding = nn.Linear(self.args.z_what_dim + 3+self.scaling_dim, args.transformer_dim) # K,x,y,alpha, scale
 
@@ -171,15 +203,15 @@ class Encoder(nn.Module):
             # input shape  is N3HW
             n = input_images.shape[0]
             k = self.args.max_set_size
-            h = self.args.image_height
-            w = self.args.image_width
+            fh = self.feature_map_height
+            fw = self.feature_map_width
 
 
             feature_and_attention_map = self.feature_and_attention_map_generator(input_images)
 
             attention_logits = feature_and_attention_map[:, :k,:, :]
 
-            attention_weights = torch.softmax(attention_logits.reshape(n,k,h*w), dim = 2).reshape(n,k,h,w)
+            attention_weights = torch.softmax(attention_logits.reshape(n,k,fh*fw), dim = 2).reshape(n,k,fh,fw)
 
             position_and_feature_maps = torch.cat([self.position_map.expand(n,-1,-1,-1), feature_and_attention_map[:,k:,:,:] ], dim = 1) # BS, 5+f, h, w
 

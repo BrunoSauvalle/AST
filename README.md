@@ -22,6 +22,7 @@ pip install -r requirements.txt
 ```
 The model has been tested on Nvidia RTX 3090 GPU.
 
+
 ## How to use the model
 
 
@@ -63,8 +64,9 @@ This command will create the following datasets in the background model output d
 
 ### Step 3 : train the foreground model
 
-- create a new entry in the foreground configuration file MF_config.py, with the image sizes, value of K, 
+  - create a new entry in the foreground configuration file MF_config.py, with the image sizes, value of K, 
   and paths to the required datasets in the background model output directory
+  - choose feature map generator and update configuration file accordingly. Implemented generators are Unet (default) and Segformer (Hugging Face implementation). 
   - start training the foreground model with python MF_train.py
     during training, some image samples are generated and using the path training_images_output_directory 
     set in the configuration file MF_config.py which have to be updated. 

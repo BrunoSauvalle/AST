@@ -52,7 +52,7 @@ def normalize_1(x):
     return z
 
 @torch.no_grad()
-def build_train_images(data,netE,netG):
+def build_train_images(data,netE,netG, n_images=None):
 
     training_mode = netE.training
     assert training_mode == netG.training
@@ -62,7 +62,8 @@ def build_train_images(data,netE,netG):
 
     input_images, background_images_with_error_prediction, GT_masks = data
     batch_size = input_images.shape[0]
-    n_images = min(batch_size, args.n_images_to_show)
+    if n_images is None:
+        n_images = min(batch_size, args.n_images_to_show)
     input_images = input_images.type(torch.cuda.FloatTensor).to(torch.device(0))[:n_images]
     background_images_with_error_prediction = background_images_with_error_prediction.type(torch.cuda.FloatTensor).to(args.device)
 
