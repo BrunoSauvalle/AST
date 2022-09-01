@@ -1,8 +1,10 @@
 
 # AST Model - Unsupervised Multi-object Segmentation Using Attention and Soft-argmax
 
-Official implementation of the model AST described in the paper "
+Official implementation of the model AST described in the version 1 of the paper "
 Unsupervised Multi-object Segmentation Using Attention and Soft-argmax"
+
+Update for version 2 of the paper to be realeased soon.
 
 ![](./images/sample_southampton.png)
 ![](./images/sample_trekell.png)
