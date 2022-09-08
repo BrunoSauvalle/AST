@@ -1,10 +1,9 @@
 
 # AST Model - Unsupervised Multi-object Segmentation Using Attention and Soft-argmax
 
-Official implementation of the model AST described in the version 1 of the paper "
+Official implementation of the model AST described in the paper "
 Unsupervised Multi-object Segmentation Using Attention and Soft-argmax"
 
-Update for version 2 of the paper to be released soon.
 
 ![](./images/sample_southampton.png)
 ![](./images/sample_trekell.png)
@@ -67,17 +66,25 @@ This command will create the following datasets in the background model output d
 ### Step 3 : train the foreground model
 
   - create a new entry in the foreground configuration file MF_config.py, with the image sizes, value of K, 
-  and paths to the required datasets in the background model output directory
-  - choose feature map generator and update configuration file accordingly. Implemented generators are Unet (default) and Segformer (Hugging Face implementation). 
-  - start training the foreground model with python MF_train.py
-    during training, some image samples are generated and using the path training_images_output_directory 
+  and paths to the required datasets in the background model output directory. Make sure that the dataset name in the background configuration file is the same as in the foreground configuration file.
+ 
+  - start training the foreground model with python MF_train.py.
+    During training, some image samples are generated and using the path training_images_output_directory 
     set in the configuration file MF_config.py which have to be updated. 
     
 
 ### Step 4 : apply the trained foreground model to get segmentation masks
 
-- update the foreground configuration file with the path to the trained model
+- update the foreground configuration file (object_model_checkpoint_path) with the path to the trained model
 - generate samples using the command python MF_generate_image_samples.py
+
+
+### New in version 2
+
+- implementation of curriculum training and baseline training scenarios. It remains necessary to build the background dataset since it is used during phase 2 of curriculum training.  
+- The object entropy loss is not needed any more and has been removed.
+- The following hyperparameters are not required any more and have been removed: threshold, object entropy loss weight, epsilon_M.
+
 
 
 

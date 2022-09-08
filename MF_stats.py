@@ -163,7 +163,7 @@ def average_segcover( mask_index,GT_mask_index, ignore_background=False):
     return mean_sc, scaled_sc
 
 @torch.no_grad()
-def evaluate(data,netE,netG, reduction=True):
+def evaluate(data,netE,netG, reduction=True, background_encoder = None, background_generator = None):
     h = args.image_height
     w = args.image_width
     training_mode = netE.training
@@ -175,11 +175,22 @@ def evaluate(data,netE,netG, reduction=True):
     input_images, background_images_with_error_prediction, GT_masks = data
 
     input_images = input_images.type(torch.cuda.FloatTensor).to(0)
-    background_images_with_error_prediction = background_images_with_error_prediction.type(torch.cuda.FloatTensor).to(
-        args.device)
+
+
+    if background_encoder == None:
+        background_images_with_error_prediction = background_images_with_error_prediction.type(
+            torch.cuda.FloatTensor).to(args.device)
+    else:
+        background_training_mode = background_encoder.training
+        background_encoder.eval()
+        background_generator.eval()
+        background_images_with_error_prediction = (1/255)*background_generator(background_encoder(255*input_images))
+        if background_training_mode:
+            background_encoder.train()
+            background_generator.train()
 
     background_images = background_images_with_error_prediction[:, :3, :, :]
-    latents, weights = netE(input_images)[:2]
+    latents = netE(input_images)
     rgb_images, foreground_masks, image_layers, activation_layers = netG(latents, background_images)
 
     batch_size = input_images.shape[0]

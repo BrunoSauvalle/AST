@@ -19,13 +19,13 @@ class Background_training_configuration_data:
             self.results_dir_path = None
             self.use_trained_model = False
             self.saved_model_path = None
-            self.unsupervised_mode = False # the number of iterations has to be set manually
+            self.unsupervised_mode = False # the number of iterations and background complexity have to be set manually
             self.n_iterations = None
             self.background_complexity = True
             self.train_model = True
             self.learning_rate = 2e-3
             self.weight_decay = 0
-            self.batch_size = None
+            self.batch_size = 128
             self.device = torch.device(0)
 
             # path where temporary training samples are stored during training
@@ -45,19 +45,19 @@ class Background_training_configuration_data:
                 setattr(self, attr, value)
 
 background_config = { 'clevrtex':
-        {"image_height": 128, "image_width": 128,"batch_size": 128,"n_iterations": 500000,
+        {"image_height": 128, "image_width": 128,"n_iterations": 500000,
            "full_dataset_path": '/workspace/nvme0n1p1/Datasets/clevrtex/clevrtex_full',
            "results_dir_path": "/workspace/nvme0n1p1/Datasets/clevrtex/background_output_new",
            "saved_model_path": "/workspace/PycharmProjects/SCOD/MOS/MF/background/background_outputs/2022-03-19T00:17:40.933167/model_final.pth",
            },
              'clevr':
-        {"image_height": 128, "image_width": 128,"batch_size": 128,"n_iterations": 2500,
+        {"image_height": 128, "image_width": 128,"n_iterations": 2500,"background_complexity" : False,
            "full_dataset_path": '/workspace/nvme0n1p1/Datasets/clevr/clevr_full',
            "results_dir_path": "/workspace/nvme0n1p1/Datasets/clevr/background_output",
            "saved_model_path": "/workspace/PycharmProjects/SCOD/MOS/MF/background/background_outputs/2022-03-30T12:03:44.180265/model_final.pth",
            },
          'shapestacks':
-     {"image_height": 64, "image_width": 64, "batch_size": 128, "n_iterations": 500000,
+     {"image_height": 64, "image_width": 64,  "n_iterations": 500000,
             "full_dataset_path": "/workspace/nvme0n1p1/Datasets/shapestacks",
            "results_dir_path": "/workspace/nvme0n1p1/Datasets/shapestacks/background_output",
            "saved_model_path": "/workspace/PycharmProjects/SCOD/AENE_outputs/2022-03-15T23:04:37.103648/model_final.pth"},
@@ -90,7 +90,7 @@ background_config = { 'clevrtex':
            "saved_model_path": "/workspace/PycharmProjects/SCOD/MOS/MF/background/background_outputs/2022-04-27T21:43:47.743933/model_final.pth"}
                       }
 
-dataset_name = 'varna3'
+dataset_name = 'objects_room'
 
 env = Background_training_configuration_data(dataset_name,background_config[dataset_name])
 

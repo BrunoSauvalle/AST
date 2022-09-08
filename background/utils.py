@@ -67,22 +67,28 @@ def save_trained_model(netBE,netBG,optimizer,complexity,model_path):
                 'generator_state_dict': netBG.state_dict(), 'complexity':complexity
                 }, model_path)
 
-def get_trained_model():
+def get_trained_model(background_model_training_scenario = "random_initialization"):
 
         model_path = env.saved_model_path
-        checkpoint = torch.load(model_path)
-        complexity = checkpoint['complexity']
-        netBE, netBG = setup_background_models(env.image_height, env.image_width,
-                                                     complexity)
         print(f'loading saved models from {model_path}')
-
+        checkpoint = torch.load(model_path)
+        complexity = env.background_complexity
+        BE, BG = setup_background_models(env.image_height, env.image_width,
+                                                     complexity)
         generator_state_dict = checkpoint['generator_state_dict']
         encoder_state_dict = checkpoint['encoder_state_dict']
-        netBG.load_state_dict(generator_state_dict)
-        netBE.load_state_dict(encoder_state_dict)
-        print('models succesfully loaded')
+        if background_model_training_scenario != "random_initialization":
+            assert background_model_training_scenario == "curriculum_training"
+            print("loading background model pretrained weights")
+            BG.load_state_dict(generator_state_dict)
+            BE.load_state_dict(encoder_state_dict)
+            print('background models succesfully loaded')
+        else:
+            print('using background model without pretrained weights')
 
-        return netBE, netBG
+
+
+        return BE,BG
 
 
 

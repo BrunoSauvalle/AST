@@ -20,6 +20,8 @@ class Segformer_model(nn.Module):
         outputs = self.complete_model(x)
         return outputs.logits
 
+
+# lines 25-155 : Code for Unet feature generator
 def compute_output_paddings(image_height,image_width,n_layers):
 
     output_paddings = []  # output paddings value for transpose convolutions
@@ -148,15 +150,14 @@ class Unet(nn.Module):
             x = self.conv1x1(x)
             return x
 
+
+
 class Encoder(nn.Module):
 
     def __init__(self,args):
         super(Encoder,self).__init__()
 
         self.args = args
-        h = args.image_height
-        w = args.image_width
-
         self.scaling_dim = 1 if args.isotropic_scaling else 2
 
         feature_and_attention_map_dim = self.args.max_set_size+self.args.z_what_dim + 1 + self.scaling_dim # +1 is for activation
@@ -213,26 +214,22 @@ class Encoder(nn.Module):
 
             attention_weights = torch.softmax(attention_logits.reshape(n,k,fh*fw), dim = 2).reshape(n,k,fh,fw)
 
-            position_and_feature_maps = torch.cat([self.position_map.expand(n,-1,-1,-1), feature_and_attention_map[:,k:,:,:] ], dim = 1) # BS, 5+f, h, w
+            position_and_feature_maps = torch.cat([self.position_map.expand(n,-1,-1,-1), feature_and_attention_map[:,k:,:,:] ], dim = 1)
 
             expanded_position_and_feature_maps = position_and_feature_maps.unsqueeze(1).expand(-1,k,-1, -1, -1)
 
             expanded_attention_weights = attention_weights.unsqueeze(2).expand(-1,-1,  self.args.z_what_dim + 3+self.scaling_dim, -1,-1)
 
-            position_and_feature_latents = torch.sum(expanded_position_and_feature_maps*expanded_attention_weights, dim = (3,4)) #  batch_size,max_set_size,feature_dim+4
+            position_and_feature_latents = torch.sum(expanded_position_and_feature_maps*expanded_attention_weights, dim = (3,4))
 
-            position_and_feature_latents = position_and_feature_latents.permute(1, 0, 2) # K, N, f+5
+            position_and_feature_latents = position_and_feature_latents.permute(1, 0, 2)
 
             # latents update with transformer encoder
 
             transformer_input = self.feature_vector_embedding(position_and_feature_latents)
             updated_position_and_feature_latents = self.latents_projection(self.transformer(transformer_input))
 
-            feature_and_attention_maps = torch.cat([attention_weights,position_and_feature_maps],dim = 1 )
+            return updated_position_and_feature_latents
 
-            return updated_position_and_feature_latents,  feature_and_attention_maps
-            # shape of latents : max_set_size, batch_size, feature_dim+4/5 # 2 channels positions+ 1/2 channel scale + 1 activation + featuure dim channels
-            # shape of weights :  batch_size,max set size, h, w
-            # shape of weights :  batch_size,max set size, h, w
 
 

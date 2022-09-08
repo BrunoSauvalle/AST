@@ -28,13 +28,12 @@ def get_object_generator():
             # 32x32
             nn.Sigmoid()
         )
-    else:
+    elif args.image_width <= 128 and args.image_height <= 128:
 
         print('object generator produces 64x64 images')
 
         return nn.Sequential(
-            # input is z, going into a convolution
-            # input shape bachsize x nzf
+
             nn.ConvTranspose2d(args.z_what_dim, 128, 2, 1, 0, bias=False),
             # 2x2
             nn.GroupNorm(8, 128), nn.CELU(),
@@ -43,7 +42,6 @@ def get_object_generator():
             nn.GroupNorm(4, 64), nn.CELU(),
             nn.ConvTranspose2d(64, 32, 4, 2, 1, bias=False),
             # 8x8
-            # state size. (ncg*2) x 4 x 4
             nn.GroupNorm(2, 32), nn.CELU(),
             nn.ConvTranspose2d(32, 16, 4, 2, 1, bias=False),
             # 16x16
@@ -53,6 +51,33 @@ def get_object_generator():
             nn.GroupNorm(1, 8), nn.CELU(),
             nn.ConvTranspose2d(8, 4, 4, 2, 1, bias=True),
             # 64x64
+            nn.Sigmoid()
+        )
+    else:
+        print('object generator produces 128x128 images')
+
+        return nn.Sequential(
+            nn.ConvTranspose2d(args.z_what_dim, 256, 2, 1, 0, bias=False),
+            # 2x2
+            nn.GroupNorm(16, 256), nn.CELU(),
+            nn.ConvTranspose2d(256, 128, 4, 2, 1, bias=False),
+            # 4x4
+            nn.GroupNorm(8, 128), nn.CELU(),
+            nn.ConvTranspose2d(128, 64, 4, 2, 1, bias=False),
+            # 8x8
+            nn.GroupNorm(4, 64), nn.CELU(),
+            nn.ConvTranspose2d(64, 32, 4, 2, 1, bias=False),
+            # 16x16
+            # state size. (ncg*2) x 4 x 4
+            nn.GroupNorm(2, 32), nn.CELU(),
+            nn.ConvTranspose2d(32, 16, 4, 2, 1, bias=False),
+            # 32x32
+            nn.GroupNorm(1, 16), nn.CELU(),
+            nn.ConvTranspose2d(16, 8, 4, 2, 1, bias=False),
+            # 64x64
+            nn.GroupNorm(1, 8), nn.CELU(),
+            nn.ConvTranspose2d(8, 4, 4, 2, 1, bias=True),
+            # 128x128
             nn.Sigmoid()
         )
 
@@ -74,7 +99,7 @@ class Renderer(nn.Module):
         print('Generator created')
 
     def forward(self, latents, backgrounds):
-        # computes scene using reconstructed background and obkect latents
+        # computes scene using reconstructed background and object latents
         # latents shape should be batch_size x number of objects in batch x 2+(1 or 2)+1+z_what_dim
         # latents structure : 2d : position latents
         #                     1d or 2d : scaling factor logit
@@ -92,7 +117,7 @@ class Renderer(nn.Module):
 
         query_activation_logit = latents[:, :, 4]
 
-        n_objects = n * k
+        n_objects = n * k # total number of objects in batch
         latents = latents.reshape(n_objects,z_what_dim+3+self.scaling_dim)
         position_latents = torch.clamp(latents[:, 0:2], min = -1, max = 1)
         scaling_factors = args.min_scaling_factor + (args.max_scaling_factor - args.min_scaling_factor) * torch.sigmoid( latents[ :, 2:2+self.scaling_dim])
@@ -113,7 +138,7 @@ class Renderer(nn.Module):
 
         #### computation of complete images
         warped_rgb_images = warped_rgba_images[:,:,:3,:,:]
-        warped_masks = warped_rgba_images[:,:,3,:,:].unsqueeze(2)+args.eps_mask
+        warped_masks = warped_rgba_images[:,:,3,:,:].unsqueeze(2)
 
         query_activations = torch.exp(query_activation_logit).reshape(k,n,1,1,1).expand(k, n,
                                                                                            1, h, w)

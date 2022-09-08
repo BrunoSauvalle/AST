@@ -12,6 +12,17 @@ import MF_utils
 import MF_data
 import MF_stats
 
+if args.background_model_training_scenario != "frozen_weights":
+    import sys
+    sys.path.insert(0, './background')
+    from background.utils import get_trained_model
+    BE,BG = get_trained_model(args.background_model_training_scenario)
+    BE.eval()
+    BG.eval()
+else:
+    BE = None
+    BG = None
+
 class RunningMean:
     def __init__(self):
         self.v = 0.
@@ -58,7 +69,7 @@ if __name__ == "__main__":
     print('creating model..')
     netE, netG = MF_utils.setup_object_models()
     print('loading checkpoint..')
-    MF_utils.load_final_checkpoint(netE, netG, object_model_checkpoint_path = args.object_model_checkpoint_path)
+    MF_utils.load_final_checkpoint(netE, netG, object_model_checkpoint_path = args.object_model_checkpoint_path,background_encoder= BE, background_generator= BG)
     print('creating  dataloader..')
     netE.eval()
     netG.eval()
@@ -68,7 +79,7 @@ if __name__ == "__main__":
         for j, data in enumerate(tqdm(test_dataloader)):
 
             mse_loss, mIoU, msc, scaled_sc, msc_fg, scaled_sc_fg,  ari, ari_fg, number_of_active_heads, average_number_of_activated_heads = MF_stats.evaluate(data, netE,
-                                                                                                                                                                           netG, reduction=False)
+                                                                                                                                                                           netG, reduction=False, background_encoder=BE, background_generator=BG)
             add_statistic('mse_loss',mse_loss)
             add_statistic('mIoU', mIoU)
             add_statistic('msc',msc )

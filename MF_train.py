@@ -21,30 +21,29 @@ import torch.utils.data
 import MF_models_encoder
 import MF_models_renderer
 
+if args.background_model_training_scenario != "frozen_weights":
+    import sys
+    sys.path.insert(0, './background')
+    from background.config import env
+    assert env.dataset_name == args.dataset_name , "dataset name in background configuration file should be the same as in foreground model configuration file"
+    from background.utils import get_trained_model
+    BE, BG = get_trained_model(args.background_model_training_scenario)
+else:
+    BE = None
+    BG = None
+
 def losses(reconstructed_images,input_images, backgrounds_with_error_predictions,activation_layers):
     # input images should be torch tensor range 0-1 NCHW
 
     n, nc, h, w = backgrounds_with_error_predictions.shape
     activation_layers = activation_layers.reshape(1 + args.max_set_size,n,h,w)
 
-    if args.real_world_video:
-        threshold = args.threshold_for_real_world_videos
-
-    else:
-        if args.fixed_background:
-            threshold = args.threshold_for_fixed_backgrounds
-        else:
-            threshold = args.threshold_for_dynamic_backgrounds
-
     pixel_reconstruction_errors = torch.sum(torch.abs(reconstructed_images - input_images), dim=1) # NHW range 0-3
-    reconstruction_loss = torch.mean(torch.square(torch.relu(pixel_reconstruction_errors - threshold))) # scalar
+    reconstruction_loss = torch.mean(torch.square(pixel_reconstruction_errors)) # scalar
 
     pixel_entropy_loss = torch.mean(torch.square(torch.sum(activation_layers*torch.log(activation_layers+1e-20), dim=0)))
 
-    average_layer_activation_per_image = torch.mean(activation_layers, dim=(2,3))
-    object_entropy_loss = torch.mean(torch.square(torch.sum(average_layer_activation_per_image*torch.log(average_layer_activation_per_image+1e-20),dim=0)))
-
-    return reconstruction_loss,  pixel_entropy_loss, object_entropy_loss #mask_loss
+    return reconstruction_loss,  pixel_entropy_loss
 
 class Training_state:
     """object containing the status of training """
@@ -80,7 +79,7 @@ class Training_state:
                     p['lr'] = rate
         self.rate = rate
 
-def object_train(archive_path):
+def object_train(archive_path,BE=None, BG = None):
 
     torch.cuda.empty_cache()
     train_dataset, train_dataloader = MF_data.get_train_dataset_and_dataloader()
@@ -92,18 +91,35 @@ def object_train(archive_path):
         checkpoint = torch.load(args.object_model_checkpoint_path)
         netE.load_state_dict(checkpoint['encoder_state_dict'])
         netG.load_state_dict(checkpoint['generator_state_dict'])
+        if BE is not None:
+            BE.load_state_dict(checkpoint['background_encoder_state_dict'])
+            BG.load_state_dict(checkpoint['background_generator_state_dict'])
 
     trainer = Training_state()
 
-    optimizer = optim.Adam([{'params': netG.parameters()}, {'params': netE.parameters()}], lr=trainer.rate,
+    if args.background_model_training_scenario == "random_initialization":
+        print('creating optimizer for background and foreground models')
+        optimizer = optim.Adam([{'params': netG.parameters()}, {'params': netE.parameters()},{'params': BG.parameters()}, {'params': BE.parameters()}], lr=trainer.rate,
                                    betas=(0.90, 0.98), eps= 1e-9,weight_decay=args.object_detection_weight_decay)
 
+    else:
+        print('creating optimizer for foreground models')
+        optimizer = optim.Adam([{'params': netG.parameters()}, {'params': netE.parameters()}], lr=trainer.rate,
+                               betas=(0.90, 0.98), eps=1e-9, weight_decay=args.object_detection_weight_decay)
+
+
     if args.use_trained_model == True:
-        print('loading optimizer state')
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
         print('loading training state')
         trainer.load_state_dict(checkpoint['trainer_state_dict'])
         print(f'training state {trainer.state_dict()}')
+        if args.background_model_training_scenario == "curriculum_training" and trainer.step > args.background_weights_freeze_duration:
+            optimizer = optim.Adam(
+                [{'params': netG.parameters()}, {'params': netE.parameters()}, {'params': BG.parameters()},
+                 {'params': BE.parameters()}], lr=trainer.rate,
+                betas=(0.90, 0.98), eps=1e-9, weight_decay=args.object_detection_weight_decay)
+        print('loading optimizer state')
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     writer = SummaryWriter()
     last_showtime = 0
@@ -112,8 +128,13 @@ def object_train(archive_path):
 
     netE.train()
     netG.train()
+    if BE is not None:
+        BE.train()
+        BG.train()
+        BE.zero_grad()
+        BG.zero_grad()
 
-    print('starting object detection training loop')
+    print('starting training loop')
 
     while True:
 
@@ -124,21 +145,37 @@ def object_train(archive_path):
             input_images, background_images_with_error_prediction = data[:2]
             batch_size = input_images.shape[0]
             input_images = input_images.type(torch.cuda.FloatTensor).to(args.device)
-            background_images_with_error_prediction = background_images_with_error_prediction.type(torch.cuda.FloatTensor).to(args.device)
+
+            if args.background_model_training_scenario  == "frozen_weights" or (args.background_model_training_scenario == "curriculum_training" and trainer.step < args.background_weights_freeze_duration):
+                background_images_with_error_prediction = background_images_with_error_prediction.type(torch.cuda.FloatTensor).to(args.device)
+            else :
+                BE.zero_grad()
+                BG.zero_grad()
+                background_images_with_error_prediction = (1/255)* BG(BE(255*input_images.type(torch.cuda.FloatTensor).to(args.device)))
+
+
+            if args.background_model_training_scenario == "curriculum_training" and trainer.step == args.background_weights_freeze_duration:
+                print("switching to phase 3 :  optimizer for background and foreground model")
+                optimizer = optim.Adam(
+                    [{'params': netG.parameters()}, {'params': netE.parameters()}, {'params': BG.parameters()},
+                     {'params': BE.parameters()}], lr=trainer.rate,
+                    betas=(0.90, 0.98), eps=1e-9, weight_decay=args.object_detection_weight_decay)
+
+
+
             background_images = background_images_with_error_prediction[:, :3, :, :]
 
             netE.zero_grad()
             netG.zero_grad()
 
-            latents, weights = netE(input_images)[:2]
+            latents = netE(input_images)
             reconstructed_images, foreground_masks,warped_images,activation_layers = netG(latents, background_images)
-            reconstruction_loss, pixel_entropy_loss,objects_entropy_loss = losses(reconstructed_images,input_images, background_images_with_error_prediction, activation_layers)
+            reconstruction_loss, pixel_entropy_loss = losses(reconstructed_images,input_images, background_images_with_error_prediction, activation_layers)
 
             pixel_entropy_loss_warmup_ratio = min(1,trainer.step / args.pixel_entropy_loss_full_activation_step)**2
 
-            objects_entropy_loss_warmup_ratio = min(1,trainer.step / args.objects_entropy_loss_full_activation_step)**2
 
-            loss = reconstruction_loss + pixel_entropy_loss * args.pixel_entropy_loss_weight* pixel_entropy_loss_warmup_ratio+ objects_entropy_loss*args.objects_entropy_loss_weight*objects_entropy_loss_warmup_ratio
+            loss = reconstruction_loss + pixel_entropy_loss * args.pixel_entropy_loss_weight* pixel_entropy_loss_warmup_ratio
 
             loss.backward()
             trainer.update(optimizer)
@@ -154,16 +191,15 @@ def object_train(archive_path):
                 mse_loss, mIoU, msc, scaled_sc, msc_fg, scaled_sc_fg, ari, ari_fg, number_of_active_heads,average_number_of_activated_heads = MF_stats.evaluate(data, netE, netG)
 
                 print(f'[dataset {args.dataset_name} ] [ archive path {archive_path}]')
-                print('[ep %d][stp %d/%d its %.2f ] [lr %.2e ] [ loss: %.2e rec_l %.2e, pixel_l %.2e objects_l %.2e ] [active heads %.2f avg activated heads %.2f] '
+                print('[ep %d][stp %d/%d its %.2f ] [lr %.2e ] [ loss: %.2e rec_l %.2e, pixel_l %.2e  ] [active heads %.2f avg activated heads %.2f] '
                       % (trainer.epoch, trainer.step, args.number_of_training_steps, its,lr,
-                         loss,reconstruction_loss, pixel_entropy_loss, objects_entropy_loss,  number_of_active_heads, average_number_of_activated_heads))
+                         loss,reconstruction_loss, pixel_entropy_loss,   number_of_active_heads, average_number_of_activated_heads))
                 print(f'[mIoU %.3f  msc_fg %.3f  ari_fg %.3f mse %2.f]' % (mIoU, msc_fg, ari_fg, mse_loss))
                 writer.add_scalar('mse_loss', mse_loss, global_step=trainer.step)
                 writer.add_scalar('mIoU', mIoU, global_step=trainer.step)
                 writer.add_scalar('msc_fg', msc_fg, global_step=trainer.step)
                 writer.add_scalar('ari_fg', ari_fg, global_step=trainer.step)
                 writer.add_scalar('pixel entropy loss', pixel_entropy_loss, global_step=trainer.step)
-                writer.add_scalar('objects entropy loss',objects_entropy_loss, global_step=trainer.step)
                 writer.add_scalar('active heads', number_of_active_heads, global_step=trainer.step)
                 writer.add_scalar('average_number_of_activated_heads', average_number_of_activated_heads, global_step=trainer.step)
                 writer.add_scalar('reconstruction_loss', reconstruction_loss, global_step=trainer.step)
@@ -185,27 +221,44 @@ def object_train(archive_path):
             if  time.time() > last_savetime +args.save_time :
                 last_savetime = time.time()
                 print('saving networks')
-                torch.save({
-                    'encoder_state_dict': netE.state_dict(),
-                    'generator_state_dict' : netG.state_dict(),
-                    'trainer_state_dict': trainer.state_dict(),
-                    'optimizer_state_dict': optimizer.state_dict()
-                }, '%s/checkpoint_%d.pth' % (archive_path, trainer.epoch % 2 ))
+                if BE is None:
+                    torch.save({
+                        'encoder_state_dict': netE.state_dict(),
+                        'generator_state_dict' : netG.state_dict(),
+                        'trainer_state_dict': trainer.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict()
+                    }, '%s/checkpoint_%d.pth' % (archive_path, trainer.epoch % 2 ))
+                else:
+                    torch.save({
+                        'encoder_state_dict': netE.state_dict(),
+                        'generator_state_dict': netG.state_dict(),
+                        'background_encoder_state_dict' : BE.state_dict(),
+                        'background_generator_state_dict': BG.state_dict(),
+                        'trainer_state_dict': trainer.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict()
+                    }, '%s/checkpoint_%d.pth' % (archive_path, trainer.epoch % 2))
 
             if trainer.step == args.number_of_training_steps:
                 print('end of training')
-                torch.save({
-                    'encoder_state_dict': netE.state_dict(),
-                    'generator_state_dict': netG.state_dict(),
-                    'trainer_state_dict': trainer.state_dict(),
-                    'optimizer_state_dict' : optimizer.state_dict()
-                }, '%s/checkpoint_final_%d_epochs.pth' % (archive_path, trainer.epoch ))
+                if BE is None:
+                    torch.save({
+                        'encoder_state_dict': netE.state_dict(),
+                        'generator_state_dict': netG.state_dict(),
+                        'trainer_state_dict': trainer.state_dict(),
+                        'optimizer_state_dict': optimizer.state_dict()
+                    }, '%s/checkpoint_final_%d_epochs.pth' % (archive_path, trainer.epoch))
+                else:
+                    torch.save({
+                        'encoder_state_dict': netE.state_dict(),
+                        'generator_state_dict': netG.state_dict(),
+                        'background_encoder_state_dict': BE.state_dict(),
+                        'background_generator_state_dict': BG.state_dict(),
+                        'trainer_state_dict': trainer.state_dict(),
+                        'optimizer_state_dict' : optimizer.state_dict()
+                    }, '%s/checkpoint_final_%d_epochs.pth' % (archive_path, trainer.epoch ))
+
                 print('model saved in %s/checkpoint_final_%d_epochs.pth' % (archive_path, trainer.epoch ))
                 return True
-
-            if trainer.step == args.evaluation_step and pixel_entropy_loss < args.detection_threshold:
-                print('detection process initialization failed, new initialization of detection process....  ')
-                return False
 
         trainer.epoch = trainer.epoch + 1
 
@@ -226,7 +279,7 @@ if __name__ == "__main__":
     print('starting training for object detection')
     training_finished = False
     while not training_finished :
-        training_finished = object_train(archive_path)
+        training_finished = object_train(archive_path,BE,BG)
     print('end of training')
 
 

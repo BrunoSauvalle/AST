@@ -7,6 +7,7 @@ import torch
 import torch.utils.data
 from pytorch_model_summary import summary
 import seaborn
+import shutil
 
 
 from MF_config import args
@@ -22,17 +23,22 @@ def setup_object_models():
         encoder_output = netE(test_image)
         print("netE test ok")
         print(summary(netE, test_image, show_input=False))
-        generator_output = netG(encoder_output[0], test_image)
-        print(summary(netG,encoder_output[0], test_image,show_input=False))
+        generator_output = netG(encoder_output, test_image)
+        print(summary(netG,encoder_output, test_image,show_input=False))
         print("netG test ok")
         return netE,netG
 
-def load_final_checkpoint(netE, netG,object_model_checkpoint_path = args.object_model_checkpoint_path):
+def load_final_checkpoint(netE, netG,object_model_checkpoint_path = args.object_model_checkpoint_path, background_encoder = None, background_generator = None ):
     print(f'loading objects checkpoint from checkpoint {object_model_checkpoint_path}')
     checkpoint = torch.load(object_model_checkpoint_path)
     netE.load_state_dict(checkpoint['encoder_state_dict'])
     netG.load_state_dict(checkpoint['generator_state_dict'])
     print('objects detection final checkpoint loaded')
+    if background_encoder is not None:
+        background_encoder.load_state_dict(checkpoint['background_encoder_state_dict'])
+    if background_generator is not None:
+        background_generator.load_state_dict(checkpoint['background_generator_state_dict'])
+        print('background model updated')
 
 def get_trained_model():
     netE, netG = setup_object_models()
@@ -52,7 +58,7 @@ def normalize_1(x):
     return z
 
 @torch.no_grad()
-def build_train_images(data,netE,netG, n_images=None):
+def build_train_images(data,netE,netG, n_images=None,background_encoder=None, background_generator= None):
 
     training_mode = netE.training
     assert training_mode == netG.training
@@ -65,7 +71,18 @@ def build_train_images(data,netE,netG, n_images=None):
     if n_images is None:
         n_images = min(batch_size, args.n_images_to_show)
     input_images = input_images.type(torch.cuda.FloatTensor).to(torch.device(0))[:n_images]
-    background_images_with_error_prediction = background_images_with_error_prediction.type(torch.cuda.FloatTensor).to(args.device)
+
+    if background_encoder == None:
+        background_images_with_error_prediction = background_images_with_error_prediction.type(
+            torch.cuda.FloatTensor).to(args.device)
+    else:
+        background_training_mode = background_encoder.training
+        background_encoder.eval()
+        background_generator.eval()
+        background_images_with_error_prediction = (1/255)*background_generator(background_encoder(255*input_images))
+        if background_training_mode:
+            background_encoder.train()
+            background_generator.train()
 
     h = args.image_height
     w = args.image_width
@@ -83,7 +100,7 @@ def build_train_images(data,netE,netG, n_images=None):
         GT_masks = GT_masks[:n_images]
 
     # model inference
-    latents,  attentions_and_feature_maps = netE(input_images)[:2]
+    latents = netE(input_images)
     rgb_images,foreground_masks, image_layers,activation_layers = netG(latents, background_images)
 
     input_images = input_images.cpu()
@@ -185,7 +202,7 @@ def build_train_images(data,netE,netG, n_images=None):
 
 def setup_archive(dataset_path):
 
-    #project_root = '/workspace/PycharmProjects/SCOD/MOS/MF'
+    AST_dir = "."
     root_arch = args.training_images_output_directory
     now = datetime.datetime.now()
     now = now.isoformat()
@@ -196,13 +213,17 @@ def setup_archive(dataset_path):
         print(f'warning : cannot create directory {outf}')
         pass
     # autosave
-    #shutil.copyfile(os.path.join(project_root, 'MF_models_encoder.py'), os.path.join(outf, 'MF_models_encoder-arch.py'))
-    #shutil.copyfile(os.path.join(project_root, 'MF_models_renderer.py'), os.path.join(outf, 'MF_models_renderer-arch.py'))
-    #shutil.copyfile(os.path.join(project_root, 'MF_data.py'), os.path.join(outf, 'MF_data-arch.py'))
-    #shutil.copyfile(os.path.join(project_root, 'MF_train.py'), os.path.join(outf, 'MF_train-arch.py'))
-    #shutil.copyfile(os.path.join(project_root, 'MF_utils.py'), os.path.join(outf, 'MF_utils-arch.py'))
-    #shutil.copyfile(os.path.join(project_root, 'MF_config.py'), os.path.join(outf, 'MF_config-arch.py'))
-
+    shutil.copyfile(os.path.join(AST_dir, 'MF_models_encoder.py'), os.path.join(outf, 'MF_models_encoder-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_models_renderer.py'), os.path.join(outf, 'MF_models_renderer-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_data.py'), os.path.join(outf, 'MF_data-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_train.py'), os.path.join(outf, 'MF_train-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_utils.py'), os.path.join(outf, 'MF_utils-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_config.py'), os.path.join(outf, 'MF_config-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_evaluate_on_test_dataset.py'), os.path.join(outf, 'MF_evaluate_on_test_dataset-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_generate_image_samples.py'),
+                    os.path.join(outf, 'MF_generate_image_samples-arch.py'))
+    shutil.copyfile(os.path.join(AST_dir, 'MF_stats.py'),
+                    os.path.join(outf, 'MF_stats-arch.py'))
     return outf,now
 
 

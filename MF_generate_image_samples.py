@@ -8,13 +8,24 @@ from MF_config import args
 import MF_utils
 import MF_data
 
+if args.background_model_training_scenario != "frozen_weights":
+    import sys
+    sys.path.insert(0, './background')
+    from background.utils import get_trained_model
+    BE, BG = get_trained_model(args.background_model_training_scenario)
+    BE.eval()
+    BG.eval()
+else:
+    BE = None
+    BG = None
+
 
 if __name__ == "__main__":
     warnings.filterwarnings("ignore")
     print('creating model..')
     netE, netG = MF_utils.setup_object_models()
     print('loading checkpoint..')
-    MF_utils.load_final_checkpoint(netE, netG, object_model_checkpoint_path = args.object_model_checkpoint_path)
+    MF_utils.load_final_checkpoint(netE, netG, object_model_checkpoint_path = args.object_model_checkpoint_path,background_encoder= BE, background_generator= BG)
     print('creating  dataloader..')
     netE.eval()
     netG.eval()
@@ -29,10 +40,9 @@ if __name__ == "__main__":
     for idx in range(number_of_samples):
         data = next(iter(test_dataloader))
 
-        images = MF_utils.build_train_images(data, netE, netG, n_images)
+        images = MF_utils.build_train_images(data, netE, netG, n_images, background_encoder=BE,background_generator=BG)
 
         N,C,H,W = images.shape
-        print(f'images shape is {images.shape}')
         images = images.reshape(N//div,div,C,H,W).permute(1,0,2,3,4).reshape(N,C,H,W)
 
         vutils.save_image(images,
