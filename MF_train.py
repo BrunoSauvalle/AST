@@ -212,7 +212,7 @@ def object_train(archive_path,BE=None, BG = None):
                 last_showtime = time.time()
                 torch.cuda.empty_cache()
                 print('saving images')
-                train_images  = MF_utils.build_train_images(data, netE,netG)
+                train_images  = MF_utils.build_train_images(data, netE,netG, background_encoder=BE, background_generator=BG)
                 n_images = min(batch_size,args.n_images_to_show)
                 vutils.save_image(train_images,
                                   '%s/comparison_train_set_%01d.png' % (archive_path, trainer.epoch), nrow=n_images,
