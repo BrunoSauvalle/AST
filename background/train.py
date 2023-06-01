@@ -83,12 +83,11 @@ def evaluate_background_complexity_using_trained_model(netBE, netBG):
     return complex_background
 
 def background_training_loop(outf,netBE, netBG,train_dataloader,optimizer,
-                             number_of_steps, evaluation_step):
+                             number_of_steps, evaluation_step, background_complexity):
 
 
     writer = SummaryWriter()
     writetime = 0
-    complexity = True
 
     assert os.path.isdir(env.results_dir_path), f' directory {env.results_dir_path} does not exist'
 
@@ -104,7 +103,6 @@ def background_training_loop(outf,netBE, netBG,train_dataloader,optimizer,
 
     saved_network = False
     save_network = False
-    complex_background = False
 
     learning_rate_reduction_step = (4 * number_of_steps) // 5
     learning_rate_is_reduced = False
@@ -149,7 +147,7 @@ def background_training_loop(outf,netBE, netBG,train_dataloader,optimizer,
 
             if saved_network == True:
                 print(f'training finished ')
-                return netBE, netBG, complex_background
+                return netBE, netBG, background_complexity
 
             if time.time() - last_message_time > 15 :
                 with torch.no_grad():
@@ -189,23 +187,23 @@ def background_training_loop(outf,netBE, netBG,train_dataloader,optimizer,
 
             if step == evaluation_step and env.unsupervised_mode:
 
-                complex_background = evaluate_background_complexity_using_trained_model(netBE, netBG)
+                background_complexity = evaluate_background_complexity_using_trained_model(netBE, netBG)
 
-                if complex_background:
+                if background_complexity:
                     print('complex background detected, aborting current training and starting new training with updated model ')
-                    return netBE, netBG, complex_background
+                    return netBE, netBG, background_complexity
                 else:
                     print('simple background, finishing training')
 
             if (step == 1000 or step % 20000 == 0) :
                 model_path = os.path.join(models_path, f'trained_model_{step}.pth')
-                utils.save_trained_model(netBE, netBG, optimizer, complexity, model_path)
-                utils.save_trained_model(netBE, netBG, optimizer, complexity, '%s/model_%d.pth' % (outf, epoch % 2))
+                utils.save_trained_model(netBE, netBG, optimizer, background_complexity, model_path)
+                utils.save_trained_model(netBE, netBG, optimizer, background_complexity, '%s/model_%d.pth' % (outf, epoch % 2))
 
             if save_network == True:
                 model_path = os.path.join(models_path, 'trained_model.pth')
-                utils.save_trained_model(netBE, netBG, optimizer, complexity, model_path)
-                utils.save_trained_model(netBE, netBG, optimizer, complexity, '%s/model_final.pth' % outf)
+                utils.save_trained_model(netBE, netBG, optimizer, background_complexity, model_path)
+                utils.save_trained_model(netBE, netBG, optimizer, background_complexity, '%s/model_final.pth' % outf)
                 print('final model saved as : ')
                 print('%s/model_final.pth' % outf)
                 saved_network = True
@@ -224,20 +222,13 @@ def train_dynamic_background_model(outf):
     if env.unsupervised_mode:
         number_of_steps = env.n_simple
         evaluation_step = env.n_eval
-        prior_complexity = False
+        background_complexity = False
     else:
         number_of_steps = env.n_iterations
-        prior_complexity = env.background_complexity
+        background_complexity = env.background_complexity
         evaluation_step = 1e10 # no evaluation in supervised mode
 
     train_dataset, train_dataloader = get_datasets()[:2]
-
-    netBE, netBG = utils.setup_background_models(env.image_height,env.image_width,prior_complexity)
-
-
-    optimizer = optim.AdamW([{'params': netBG.parameters()}, {'params': netBE.parameters()}],
-                           lr=env.learning_rate, betas=(0.90, 0.999), weight_decay=env.weight_decay)
-
 
     if env.use_trained_model:
 
@@ -246,9 +237,15 @@ def train_dynamic_background_model(outf):
         encoder_state_dict = checkpoint['encoder_state_dict']
         generator_state_dict = checkpoint['generator_state_dict']
         optimizer_state_dict = checkpoint['optimizer_state_dict']
-        saved_model_complexity = checkpoint['complexity']
-        assert saved_model_complexity == prior_complexity
+        background_complexity = checkpoint['complexity']
 
+    netBE, netBG = utils.setup_background_models(env.image_height,env.image_width,background_complexity)
+
+
+    optimizer = optim.AdamW([{'params': netBG.parameters()}, {'params': netBE.parameters()}],
+                           lr=env.learning_rate, betas=(0.90, 0.999), weight_decay=env.weight_decay)
+
+    if env.use_trained_model:
         netBE.load_state_dict(encoder_state_dict)
         netBG.load_state_dict(generator_state_dict)
         optimizer.load_state_dict(optimizer_state_dict)
@@ -259,7 +256,7 @@ def train_dynamic_background_model(outf):
 
 
     netBE, netBG, complex_background = background_training_loop(outf,netBE, netBG,train_dataloader,optimizer,
-                                                                                    number_of_steps, evaluation_step)
+                                                                                    number_of_steps, evaluation_step,background_complexity)
 
     if env.unsupervised_mode and complex_background :  # if the background is complex, start new training with more complex model
 
@@ -273,7 +270,7 @@ def train_dynamic_background_model(outf):
         optimizer = optim.AdamW([{'params': netBG.parameters()}, {'params': netBE.parameters()}],
                                 lr=env.learning_rate, betas=(0.90, 0.999), weight_decay=env.weight_decay)
 
-        netBE, netBG, _ = background_training_loop(outf,netBE, netBG,train_dataloader,optimizer, number_of_steps, evaluation_step)
+        netBE, netBG, _ = background_training_loop(outf,netBE, netBG,train_dataloader,optimizer, number_of_steps, evaluation_step, background_complexity)
 
     return netBE, netBG
 
